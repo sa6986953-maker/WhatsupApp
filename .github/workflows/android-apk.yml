@@ -1,52 +1,105 @@
 
-name: Build Whatsup APK from ZIP
+name: Build Whatsup APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: true
 
-      - name: Set up Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      - name: Extract Whatsup project
+      - name: Find and Extract ZIP
+        shell: bash
         run: |
-          mkdir project
-          unzip -q Whatsup-GitHub-Ready.zip -d project
+          mkdir -p project
 
-      - name: Create debug signing key
+          mapfile -t ZIP_FILES < <(
+            find . -type f -iname "*.zip" \
+            ! -path "./.git/*" \
+            ! -path "./project/*"
+          )
+
+          if [ "${#ZIP_FILES[@]}" -eq 0 ]; then
+            echo "ERROR: No ZIP file found in repository!"
+            exit 1
+          fi
+
+          if [ "${#ZIP_FILES[@]}" -gt 1 ]; then
+            echo "ERROR: Multiple ZIP files found:"
+            printf '%s\n' "${ZIP_FILES[@]}"
+            exit 1
+          fi
+
+          ZIP_FILE="${ZIP_FILES[0]}"
+
+          echo "Found ZIP: $ZIP_FILE"
+
+          unzip -q "$ZIP_FILE" -d project
+
+          echo "Extracted project files:"
+          ls -la project
+
+          if [ ! -f project/settings.gradle.kts ] && \
+             [ ! -f project/settings.gradle ]; then
+            echo "ERROR: Android Gradle settings file not found!"
+            exit 1
+          fi
+
+      - name: Generate Debug Keystore
         run: |
-          keytool -genkeypair -v -keystore project/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          keytool -genkeypair -v \
+            -keystore project/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Build debug APK
-        run: gradle -p project --no-daemon --stacktrace assembleDebug
+      - name: Build Whatsup APK
+        run: |
+          gradle -p project \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
 
-      - name: Upload APK
+      - name: Verify APK
+        run: |
+          find project/app/build/outputs/apk \
+            -type f -name "*.apk"
+
+      - name: Upload Whatsup APK
         uses: actions/upload-artifact@v4
         with:
           name: Whatsup-APK
           path: project/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          
