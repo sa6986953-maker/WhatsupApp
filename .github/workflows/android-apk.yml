@@ -42,35 +42,28 @@ jobs:
 
           mapfile -t ZIP_FILES < <(
             find . -type f -iname "*.zip" \
-            ! -path "./.git/*" \
-            ! -path "./project/*"
+            ! -path "./.git/*"
           )
 
-          if [ "${#ZIP_FILES[@]}" -eq 0 ]; then
-            echo "ERROR: No ZIP file found in repository!"
-            exit 1
-          fi
-
-          if [ "${#ZIP_FILES[@]}" -gt 1 ]; then
-            echo "ERROR: Multiple ZIP files found:"
+          if [ "${#ZIP_FILES[@]}" -ne 1 ]; then
+            echo "ERROR: Exactly one ZIP file is required."
             printf '%s\n' "${ZIP_FILES[@]}"
             exit 1
           fi
 
-          ZIP_FILE="${ZIP_FILES[0]}"
-
-          echo "Found ZIP: $ZIP_FILE"
-
-          unzip -q "$ZIP_FILE" -d project
-
-          echo "Extracted project files:"
-          ls -la project
+          unzip -q "${ZIP_FILES[0]}" -d project
 
           if [ ! -f project/settings.gradle.kts ] && \
              [ ! -f project/settings.gradle ]; then
-            echo "ERROR: Android Gradle settings file not found!"
+            echo "ERROR: Gradle settings file missing."
             exit 1
           fi
+
+      - name: Fix Missing Environment File
+        run: |
+          touch project/.env.example
+          echo "Environment file checked:"
+          ls -la project/.env.example
 
       - name: Generate Debug Keystore
         run: |
@@ -96,7 +89,7 @@ jobs:
           find project/app/build/outputs/apk \
             -type f -name "*.apk"
 
-      - name: Upload Whatsup APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Whatsup-APK
